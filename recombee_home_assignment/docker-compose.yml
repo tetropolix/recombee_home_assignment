@@ -1,0 +1,54 @@
+version: '3.9'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - ~/.docker-conf/rabbitmq/data/:/var/lib/rabbitmq/
+      - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      timeout: 10s
+
+  # consumer:
+  #   build: ./consumer
+  #   container_name: consumer
+  #   depends_on:
+  #     - rabbitmq
+  #   restart: always
+  #   environment:
+  #     - RABBIT_MQ_HOST=rabbitmq
+  #     - RABBIT_MQ_USER=guest
+  #     - RABBIT_MQ_PASSWORD=guest
+  #     - RABBIT_MQ_PORT=5672
+  #     - RABBIT_MQ_VHOST=/
+  
+  db:
+    image: postgres:15
+    container_name: postgres15
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: feeds
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db_init/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  adminer:
+    image: adminer
+    container_name: adminer
+    depends_on:
+      - db
+    restart: always
+    ports:
+      - 8080:8080
