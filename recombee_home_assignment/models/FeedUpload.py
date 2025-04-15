@@ -2,6 +2,8 @@ from datetime import datetime
 from enum import IntEnum
 from typing import Optional
 
+from pydantic import BaseModel
+
 
 class FeedUploadStatus(IntEnum):
     QUEUED = 1
@@ -10,7 +12,7 @@ class FeedUploadStatus(IntEnum):
     FINISHED_ERROR = 4
 
 
-class FeedUpload():
+class FeedUpload(BaseModel):
     id: Optional[int] = None
     status: FeedUploadStatus
     error: Optional[str] = None

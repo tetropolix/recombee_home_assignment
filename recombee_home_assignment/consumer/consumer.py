@@ -1,80 +1,95 @@
 import asyncio
 import os
-from pyexpat import ExpatError
-from aio_pika import connect_robust
-from pydantic import ValidationError
-import xmltodict
 
 from clients.db_client import DBClient
-from models.Feed import Feed
+from clients.rabbitmq_client import RabbitMQClient
+from consumer.processing_utils import (
+    FeedParsingException,
+    cleanup_images_dir,
+    download_images,
+    parse_and_save_xml,
+)
+from models.FeedItem import FeedItemWithUploadReference
 from models.FeedUpload import FeedUploadStatus
 
-host = 'localhost' if os.getenv('RABBIT_MQ_HOST') is None else os.getenv('RABBIT_MQ_HOST')
-user = 'guest' if os.getenv('RABBIT_MQ_USER') is None else os.getenv('RABBIT_MQ_USER')
-password = 'guest' if os.getenv('RABBIT_MQ_PASSWORD') is None else os.getenv('RABBIT_MQ_PASSWORD')
-feeds_queue = 'feeds_queue' if os.getenv('RABBIT_MQ_QUEUE') is None else os.getenv('RABBIT_MQ_QUEUE')
+rabbit_mq_host = os.getenv("RABBIT_MQ_HOST", "localhost")
+rabbit_mq_user = os.getenv("RABBIT_MQ_USER", "guest")
+rabbit_mq_pass = os.getenv("RABBIT_MQ_PASSWORD", "guest")
+rabbit_mq_queue = os.getenv("RABBIT_MQ_QUEUE", "feeds_queue")
 
-db_host = 'localhost' if os.getenv('POSTGRES_DB_HOST') is None else os.getenv('POSTGRES_DB_HOST')
-pg_db = 'feeds' if os.getenv('POSTGRES_DB') is None else os.getenv('POSTGRES_DB')
-pg_user = 'user' if os.getenv('POSTGRES_PASSWORD') is None else os.getenv('POSTGRES_PASSWORD')
-pg_password = 'pass' if os.getenv('POSTGRES_PASSWORD') is None else os.getenv('POSTGRES_PASSWORD')
+db_host = os.getenv("POSTGRES_DB_HOST", "localhost")
+pg_db = os.getenv("POSTGRES_DB", "feeds")
+pg_user = os.getenv("POSTGRES_USER", "user")
+pg_password = os.getenv("POSTGRES_PASSWORD", "pass")
+pg_port = os.getenv("POSTGRES_PASSWORD", "5432")
 
-class FeedParsingException(Exception):
-    def __init__(self, message="An error occurred while parsing the feed."):
-        super().__init__(message)
+images_dir = os.getenv("SHARED_IMAGES_DIR", "./app/images")
 
-def parse_and_save_xml(msg_xml: str) -> list[Feed]:
-    try:
-        xml_as_dict = xmltodict.parse(msg_xml)
-    except ExpatError:
-        raise FeedParsingException("Unable to parse XML structure")
 
-    try:
-        items = xml_as_dict['rss']['channel']['item']
-    except (KeyError, TypeError):
-        raise FeedParsingException("Missing 'rss.channel.item' structure in XML")
-
-    # adjust possible dict to list, or single g:additional_image_link to list
-    if isinstance(items, dict):
-        items = [items]
-    for item in items:
-        try:
-            additional_image_link = item["g:additional_image_link"]
-            if isinstance(additional_image_link, str):
-                item["g:additional_image_link"] = [additional_image_link]
-        except KeyError:
-            # no need to do anything
-            continue
-
-    try:
-        return [Feed(**item) for item in items]
-    except ValidationError as ve:
-        print(ve.errors)
-        raise FeedParsingException(ve.errors)
-    
 async def main():
-    db = DBClient(dsn=f"postgresql://{pg_user}:{pg_password}@{db_host}:5432/{pg_db}")
-    await db.connect()
-    connection = await connect_robust(f"amqp://{user}:{password}@{host}/")
-    channel = await connection.channel()
-    queue = await channel.declare_queue(f"{feeds_queue}", durable=True)
+    rabbitmq_client = RabbitMQClient(
+        user=rabbit_mq_user,
+        password=rabbit_mq_pass,
+        host=rabbit_mq_host,
+        queue=rabbit_mq_queue,
+        exchange=None,
+        routing_key=None,
+    )
+    db = DBClient(
+        dsn=f"postgresql://{pg_user}:{pg_password}@{db_host}:{pg_port}/{pg_db}"
+    )
 
-    async with queue.iterator() as queue_iter:
-        print(" [*] Waiting for messages. To exit press CTRL+C")
+    await db.connect()
+    await rabbitmq_client.connect_for_consuming()
+
+    async with rabbitmq_client.get_queue().iterator() as queue_iter:
+
         async for message in queue_iter:
             async with message.process():
-                feed_upload_id = int(message.headers.get('feed_upload_id'))
-                await db.update_feed_upload_job(feed_upload_id, status=FeedUploadStatus.PROCESSING)
+                feed_upload_id = message.headers.get("feed_upload_id")
+                if not isinstance(
+                    feed_upload_id, int
+                ):  # was unable to type it into the int
+                    raise ValueError(
+                        "Expected an integer value as feed_upload_id from header"
+                    )
+
+                await db.update_feed_upload_job(
+                    feed_upload_id, status=FeedUploadStatus.PROCESSING
+                )
 
                 try:
                     msg_body = message.body.decode()
-                    feed_items = parse_and_save_xml(msg_body)
-                    await db.save_feeds(feed_items)
-                    print("after succ safe")
-                except FeedParsingException as e:
-                    await db.update_feed_upload_job(feed_upload_id, status=FeedUploadStatus.FINISHED_ERROR, error=str(e))
-                    print("exc")
+                    feed_items = [
+                        FeedItemWithUploadReference.model_construct(
+                            feed_upload_id=feed_upload_id, **dict(item)
+                        )
+                        for item in parse_and_save_xml(msg_body)
+                    ]
+                    new_image_ids = await download_images(feed_items, images_dir)
+                    for feed_item in feed_items:
+                        try:
+                            image_ids = new_image_ids[feed_item.feed_item_id]
+                            feed_item.image_link = image_ids[0]
+                            feed_item.additional_image_link = image_ids[1]
+                        except KeyError:
+                            pass
 
+                    await db.save_feed_items(feed_items)
+                except FeedParsingException as e:
+                    await db.update_feed_upload_job(
+                        feed_upload_id,
+                        status=FeedUploadStatus.FINISHED_ERROR,
+                        error=f"{FeedParsingException.__name__}: {str(e)}",
+                    )
+                    cleanup_images_dir(images_dir, feed_upload_id)
+                except Exception as e:
+                    await db.update_feed_upload_job(
+                        feed_upload_id,
+                        status=FeedUploadStatus.FINISHED_ERROR,
+                        error=f"Non xml-processing exception: {str(e)}",
+                    )
+                    cleanup_images_dir(images_dir, feed_upload_id)
 
 
 if __name__ == "__main__":
