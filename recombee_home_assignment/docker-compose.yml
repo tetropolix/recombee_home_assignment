@@ -48,8 +48,8 @@ services:
       rabbitmq:
         condition: service_healthy
     restart: always
-    ports:
-      - 8000:8000
+    expose:
+      - 8000
     environment:
       - POSTGRES_DB_HOST=db
       - POSTGRES_DB=feeds
@@ -65,6 +65,16 @@ services:
       - SHARED_IMAGES_DIR=/app/images
     volumes:
       - api_consumer_shared_images:/app/images
+
+  nginx:
+    image: nginx:stable-alpine3.20-slim
+    container_name: nginx
+    depends_on:
+      - api
+    ports:
+      - 4444:80
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
 
   consumer:
     build:
