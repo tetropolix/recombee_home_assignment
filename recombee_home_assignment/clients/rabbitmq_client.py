@@ -1,6 +1,9 @@
 from typing import Optional
 import aio_pika
 
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 class RabbitMQClient:
     def __init__(
@@ -24,6 +27,7 @@ class RabbitMQClient:
         self.queue_declared = None
 
     async def connect_for_publishing(self):
+        logger.info(f"Creating connection for publishing using {f'amqp://{self.user}:{self.password}@{self.host}/'}")
         if(self.exchange is None or self.routing_key is None):
             raise RuntimeError("Provide exchange and routing_key for publishing")
 
@@ -39,18 +43,22 @@ class RabbitMQClient:
         await self.queue_declared.bind(
             self.exchange_declared, routing_key=self.routing_key
         )
+        logger.info("Connection for publishing created")
 
     async def connect_for_consuming(self):
+        logger.info(f"Creating connection for consuming using {f'amqp://{self.user}:{self.password}@{self.host}/'}")
         self.connection = await aio_pika.connect_robust(
             f"amqp://{self.user}:{self.password}@{self.host}/"
         )
         self.channel = await self.connection.channel()
 
-        self.queue_declared = await self.channel.declare_queue(self.queue, durable=True)        
+        self.queue_declared = await self.channel.declare_queue(self.queue, durable=True)     
+        logger.info("Connection for consuming created")   
 
     async def close(self):
         if self.connection:
             await self.connection.close()
+            logger.info("Connection closed")   
 
     def get_channel(self):
         if not self.channel:

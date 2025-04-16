@@ -16,7 +16,7 @@ class FeedParsingException(Exception):
         super().__init__(message)
 
 
-def parse_and_save_xml(msg_xml: str) -> list[FeedItem]:
+def parse_xml_to_feed_items(msg_xml: str) -> list[FeedItem]:
     try:
         xml_as_dict = xmltodict.parse(msg_xml)
     except ExpatError:
@@ -104,6 +104,36 @@ async def download_image(session: aiohttp.ClientSession, url: str, images_dir: P
         else:
             raise FeedParsingException(f"Unable to download image from: {url}")
         return new_image_id
+
+
+async def download_images_for_whole_feed(
+    feed_upload_id: int, xml_to_parse: str, base_dir: str
+) -> list[FeedItemWithUploadReference]:
+    """
+    Method parses provided xml string and feed items' associated images
+
+    :param feed_upload_id: feed upload id which will be referenced by every feed_item
+    :param xml_to_parse: xml as string which will be parsed
+    :base_dir: directory which will store downloaded images in {feed_upload_id} dir
+
+    :return: list of FeedItemWithUploadReference ready to save
+    """
+    feed_items = [
+        FeedItemWithUploadReference.model_construct(
+            feed_upload_id=feed_upload_id, **dict(item)
+        )
+        for item in parse_xml_to_feed_items(xml_to_parse)
+    ]
+    new_image_ids = await download_images(feed_items, base_dir)
+    for feed_item in feed_items:
+        try:
+            image_ids = new_image_ids[feed_item.feed_item_id]
+            feed_item.image_link = image_ids[0]
+            feed_item.additional_image_link = image_ids[1]
+        except KeyError:
+            pass
+
+    return feed_items
 
 
 def cleanup_images_dir(images_dir, feed_upload_id):

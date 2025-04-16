@@ -9,28 +9,13 @@ services:
       - 5672:5672
       - 15672:15672
     volumes:
-      - ~/.docker-conf/rabbitmq/data/:/var/lib/rabbitmq/
-      - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
+      - rabbitmq_data:/var/lib/rabbitmq/
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
-      interval: 30s
+      interval: 10s
       retries: 5
-      start_period: 10s
+      start_period: 5s
       timeout: 10s
-
-  # consumer:
-  #   build: ./consumer
-  #   container_name: consumer
-  #   depends_on:
-  #     - rabbitmq
-  #   restart: always
-  #   environment:
-  #     - RABBIT_MQ_HOST=rabbitmq
-  #     - RABBIT_MQ_USER=guest
-  #     - RABBIT_MQ_PASSWORD=guest
-  #     - RABBIT_MQ_PORT=5672
-  #     - RABBIT_MQ_VHOST=/
-  
   db:
     image: postgres:15
     container_name: postgres15
@@ -43,6 +28,7 @@ services:
       - "5432:5432"
     volumes:
       - ./db_init/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - db_data:/var/lib/postgresql/data
 
   adminer:
     image: adminer
@@ -52,3 +38,58 @@ services:
     restart: always
     ports:
       - 8080:8080
+  
+  api:
+    build: .
+    container_name: api
+    depends_on:
+      db:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    restart: always
+    ports:
+      - 8000:8000
+    environment:
+      - POSTGRES_DB_HOST=db
+      - POSTGRES_DB=feeds
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_PORT=5432
+      - RABBIT_MQ_USER=guest
+      - RABBIT_MQ_PASS=guest
+      - RABBIT_MQ_HOST=rabbitmq
+      - RABBIT_MQ_EXCHANGE=feeds_exchange
+      - RABBIT_MQ_QUEUE=feeds_queue
+      - RABBIT_MQ_RT_KEY=feeds_queue
+      - SHARED_IMAGES_DIR=/app/images
+    volumes:
+      - api_consumer_shared_images:/app/images
+
+  consumer:
+    build:
+      context: .
+      dockerfile: consumer/Dockerfile
+    container_name: consumer
+    depends_on: 
+      - api
+    restart: always
+    environment:
+      - RABBIT_MQ_HOST=rabbitmq
+      - RABBIT_MQ_USER=guest
+      - RABBIT_MQ_PASSWORD=guest
+      - RABBIT_MQ_QUEUE=feeds_queue
+      - POSTGRES_DB_HOST=db
+      - POSTGRES_DB=feeds
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_PORT=5432
+      - SHARED_IMAGES_DIR=/app/images
+    volumes:
+      - api_consumer_shared_images:/app/images
+
+volumes:
+  api_consumer_shared_images:
+  db_data:
+  rabbitmq_data:
+  

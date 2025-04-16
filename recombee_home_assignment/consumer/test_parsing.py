@@ -1,13 +1,13 @@
 import pytest
 
-from consumer.consumer import FeedParsingException, parse_and_save_xml
+from consumer.processing_utils import parse_xml_to_feed_items, FeedParsingException
 from models.FeedItem import FeedItem
 
 def test_valid_xml_with_multiple_items():
     with open("feed_example.xml", "r", encoding="utf-8") as f:
         xml = f.read()
 
-    result = parse_and_save_xml(xml)
+    result = parse_xml_to_feed_items(xml)
     assert isinstance(result, list)
     assert len(result) == 3
     assert isinstance(result[0], FeedItem)
@@ -43,7 +43,7 @@ def test_valid_xml_with_single_item():
     </rss>
     '''
         
-    result = parse_and_save_xml(xml)
+    result = parse_xml_to_feed_items(xml)
     assert len(result) == 1
     assert result[0].title == "Bodylab Men'';s T-shirt - Black"
     assert isinstance(result[0].additional_image_link, list)
@@ -52,19 +52,19 @@ def test_additional_image_link_as_string():
     with open("feed_example.xml", "r", encoding="utf-8") as f:
         xml = f.read()
         
-    result = parse_and_save_xml(xml)
+    result = parse_xml_to_feed_items(xml)
     assert isinstance(result[0].additional_image_link, list)
     assert len(result[0].additional_image_link) == 2
 
 def test_invalid_xml_structure_raises_expat_error():
     xml = '<rss><channel><item><title>Broken'
     with pytest.raises(FeedParsingException, match="Unable to parse XML structure"):
-        parse_and_save_xml(xml)
+        parse_xml_to_feed_items(xml)
 
 def test_missing_rss_channel_item_raises_exception():
     xml = '<rss><channel></channel></rss>'
     with pytest.raises(FeedParsingException, match="Missing 'rss.channel.item' structure"):
-        parse_and_save_xml(xml)
+        parse_xml_to_feed_items(xml)
 
 def test_validation_error_raises_feed_parsing_exception():
     xml = '''
@@ -78,4 +78,4 @@ def test_validation_error_raises_feed_parsing_exception():
     </rss>
     '''
     with pytest.raises(FeedParsingException):
-        parse_and_save_xml(xml)
+        parse_xml_to_feed_items(xml)

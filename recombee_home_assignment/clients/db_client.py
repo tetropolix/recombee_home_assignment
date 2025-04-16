@@ -1,8 +1,11 @@
 import asyncpg
 from typing import Optional
 
+from logger import get_logger
 from models.FeedItem import FeedItemWithUploadReference
 from models.FeedUpload import FeedUpload, FeedUploadStatus
+
+logger = get_logger(__name__)
 
 
 class DBClient:
@@ -14,11 +17,14 @@ class DBClient:
         self.pool: Optional[asyncpg.Pool] = None
 
     async def connect(self):
+        logger.info(f"Creating connection pool using {self.dsn} dsn")
         self.pool = await asyncpg.create_pool(dsn=self.dsn)
+        logger.info("Connection pool created")
 
     async def close(self):
         if self.pool:
             await self.pool.close()
+            logger.info("Connection pool closed")
 
     def get_connection_pool(self) -> asyncpg.Pool:
         if self.pool is None:
@@ -45,7 +51,9 @@ class DBClient:
 
         async with self.get_connection_pool().acquire() as conn:
             rows = await conn.fetch(sql, *params)
-
+        logger.info(
+            f"{len(rows)} records were retrieved for feed_upload_id {feed_upload_id} and item_id {item_id}"
+        )
         return [
             FeedItemWithUploadReference.model_construct(**dict(row)) for row in rows
         ]
@@ -72,6 +80,8 @@ class DBClient:
             for feed_item in feed_items
         ]
 
+        logger.info(f"Saving {len(feed_items)} feed_items")
+
         async with self.get_connection_pool().acquire() as conn:
             async with conn.transaction():
                 await conn.executemany(insert_feed_items_sql, rows)
@@ -90,6 +100,7 @@ class DBClient:
         """
         async with self.get_connection_pool().acquire() as conn:
             row = await conn.fetchrow(sql, FeedUploadStatus.QUEUED, None)
+            logger.info(f"Created feed upload job with {row['id']} id")
             return row["id"]
 
     async def get_feed_upload_job(self, feed_upload_id: int) -> FeedUpload | None:
@@ -101,6 +112,9 @@ class DBClient:
 
         async with self.get_connection_pool().acquire() as conn:
             row = await conn.fetchrow(sql, feed_upload_id)
+            logger.info(
+                f"Retrieved feed upload job with {feed_upload_id} id {'succsessfuly' if row is not None else 'unsuccessfuly'}"
+            )
 
         if not row:
             return None
@@ -136,3 +150,6 @@ class DBClient:
 
         async with self.get_connection_pool().acquire() as conn:
             await conn.execute(sql, *values)
+            logger.info(
+                f"Updated feed upload job with {feed_upload_id} id, with {status} - {status.name if status is not None else None} as status and {error} as error"
+            )

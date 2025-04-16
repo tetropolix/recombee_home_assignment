@@ -16,7 +16,7 @@ db_host = os.getenv("POSTGRES_DB_HOST", "localhost")
 pg_db = os.getenv("POSTGRES_DB", "feeds")
 pg_user = os.getenv("POSTGRES_USER", "user")
 pg_password = os.getenv("POSTGRES_PASSWORD", "pass")
-pg_port = os.getenv("POSTGRES_PASSWORD", "5432")
+pg_port = os.getenv("POSTGRES_PORT", "5432")
 
 rabbit_mq_user = os.getenv("RABBIT_MQ_USER", "guest")
 rabbit_mq_pass = os.getenv("RABBIT_MQ_PASS", "guest")
