@@ -3,13 +3,8 @@ import os
 
 from clients.db_client import DBClient
 from clients.rabbitmq_client import RabbitMQClient
-from consumer.processing_utils import (
-    FeedParsingException,
-    cleanup_images_dir,
-    download_images_for_whole_feed,
-)
+from consumer.processing_utils import process_feeds
 from logger import get_logger
-from models.FeedUpload import FeedUploadStatus
 
 logger = get_logger("CONSUMER SERVICE")
 
@@ -58,39 +53,9 @@ async def main():
                         "Expected an integer value as feed_upload_id from header"
                     )
 
-                try:
-                    # update associated feed upload job
-                    await db.update_feed_upload_job(
-                        feed_upload_id, status=FeedUploadStatus.PROCESSING
-                    )
-
-                    # parse xml and save images
-                    feed_items = await download_images_for_whole_feed(
-                        feed_upload_id,
-                        message.body.decode(),
-                        images_dir,
-                    )
-
-                    # save feed items + update the associated upload job
-                    await db.save_feed_items(feed_items)
-                except FeedParsingException as e:
-                    await db.update_feed_upload_job(
-                        feed_upload_id,
-                        status=FeedUploadStatus.FINISHED_ERROR,
-                        error=f"{FeedParsingException.__name__}: {str(e)}",
-                    )
-                    cleanup_images_dir(images_dir, feed_upload_id)
-                    logger.warning(f"FeedParsingException has occured - {str(e)}")
-                except Exception as e:
-                    await db.update_feed_upload_job(
-                        feed_upload_id,
-                        status=FeedUploadStatus.FINISHED_ERROR,
-                        error=f"Non xml-processing exception: {str(e)}",
-                    )
-                    cleanup_images_dir(images_dir, feed_upload_id)
-                    logger.warning(
-                        f"Non xml-processing exception has occured: {str(e)}"
-                    )
+                await process_feeds(
+                    feed_upload_id, message.body.decode(), images_dir, logger, db
+                )
 
 
 if __name__ == "__main__":

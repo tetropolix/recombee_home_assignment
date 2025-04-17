@@ -1,4 +1,5 @@
 import json
+from logging import Logger
 from pathlib import Path
 from pyexpat import ExpatError
 import shutil
@@ -8,13 +9,52 @@ import aiohttp
 from pydantic import ValidationError
 import xmltodict
 
+from clients.db_client import DBClient
 from models.FeedItem import FeedItem, FeedItemWithUploadReference
+from models.FeedUpload import FeedUploadStatus
 
 
 class FeedParsingException(Exception):
     def __init__(self, message="An error occurred while parsing the feed."):
         super().__init__(message)
 
+async def process_feeds(feed_upload_id: int, xml_string: str, images_dir: str, logger: Logger, db: DBClient):
+    """
+    Method processes whole background logic on provided xml feed
+    """
+    try:
+        # update associated feed upload job
+        await db.update_feed_upload_job(
+            feed_upload_id, status=FeedUploadStatus.PROCESSING
+        )
+
+        # parse xml and save images
+        feed_items = await download_images_for_whole_feed(
+            feed_upload_id,
+            xml_string,
+            images_dir,
+        )
+
+        # save feed items + update the associated upload job
+        await db.save_feed_items(feed_items)
+    except FeedParsingException as e:
+        await db.update_feed_upload_job(
+            feed_upload_id,
+            status=FeedUploadStatus.FINISHED_ERROR,
+            error=f"{FeedParsingException.__name__}: {str(e)}",
+        )
+        cleanup_images_dir(images_dir, feed_upload_id)
+        logger.warning(f"FeedParsingException has occured - {str(e)}")
+    except Exception as e:
+        await db.update_feed_upload_job(
+            feed_upload_id,
+            status=FeedUploadStatus.FINISHED_ERROR,
+            error=f"Non xml-processing exception: {str(e)}",
+        )
+        cleanup_images_dir(images_dir, feed_upload_id)
+        logger.warning(
+            f"Non xml-processing exception has occured: {str(e)}"
+        )
 
 def parse_xml_to_feed_items(msg_xml: str) -> list[FeedItem]:
     try:

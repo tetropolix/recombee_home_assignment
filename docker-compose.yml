@@ -97,6 +97,27 @@ services:
       - SHARED_IMAGES_DIR=/app/images
     volumes:
       - api_consumer_shared_images:/app/images
+  
+  consumer_v2:
+    build:
+      context: .
+      dockerfile: consumer_v2/Dockerfile
+    container_name: consumer_v2
+    depends_on: 
+      - api
+    restart: always
+    environment:
+      - RABBIT_MQ_HOST=rabbitmq
+      - RABBIT_MQ_USER=guest
+      - RABBIT_MQ_PASSWORD=guest
+      - POSTGRES_DB_HOST=db
+      - POSTGRES_DB=feeds
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_PORT=5432
+      - SHARED_IMAGES_DIR=/app/images
+    volumes:
+      - api_consumer_shared_images:/app/images
 
 volumes:
   api_consumer_shared_images:

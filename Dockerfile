@@ -6,6 +6,12 @@ COPY ./clients/ ./clients/
 
 COPY ./models/ ./models/
 
+# need to import the dramariq actor
+COPY ./consumer_v2/__init__.py ./consumer_v2/c__init__.py 
+COPY ./consumer_v2/consumer_v2.py ./consumer_v2/consumer_v2.py
+COPY ./consumer/__init__.py ./consumer/__init__.py
+COPY ./consumer/processing_utils.py ./consumer/processing_utils.py
+
 COPY logger.py .
 
 COPY requirements.txt .

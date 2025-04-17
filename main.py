@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from clients.db_client import DBClient
 from clients.rabbitmq_client import RabbitMQClient
+from consumer_v2.consumer_v2 import process_feeds_v2
 from models.FeedItem import FeedItem
 from models.feeds_api_response.FeedUploadResponse import FeedUploadResponse
 from models.feeds_api_response.FeedUploadStatusResponse import FeedUploadStatusResponse
@@ -89,6 +90,31 @@ async def upload_feed(request: Request, content_type: Optional[str] = Header(Non
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to send to RabbitMQ: {str(e)}"
+        )
+
+    return FeedUploadResponse(id=feed_upload_id)
+
+@app.post("/feeds-v2", response_model=FeedUploadResponse)
+async def upload_feed_v2(request: Request, content_type: Optional[str] = Header(None)):
+    if content_type != "application/xml":
+        raise HTTPException(
+            status_code=415, detail="Unsupported Media Type. Expected 'application/xml'"
+        )
+
+    try:
+        request_xml = await request.body()
+    except Exception as e:
+        raise HTTPException(
+            status_code=400, detail=f"Error reading request body: {str(e)}"
+        )
+
+    feed_upload_id = await db_client().create_feed_upload_job()
+
+    try:
+        process_feeds_v2.send(feed_upload_id, request_xml.decode()) 
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create backround task: {str(e)}"
         )
 
     return FeedUploadResponse(id=feed_upload_id)
