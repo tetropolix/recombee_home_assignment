@@ -7,4 +7,4 @@ WHERE successfully_finished_at > TIMESTAMPTZ '{time when we have send the first 
 
 #### Results from consumer: 00:00:10.622888 (seconds)
 
-#### Results from consumer_v2: 00:00:49.050087 (seconds)
+#### Results from consumer_v2: 00:00:49.050087 (seconds) (-p 4 -t 4)
