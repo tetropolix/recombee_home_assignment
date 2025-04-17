@@ -26,6 +26,7 @@ pg_port = os.getenv("POSTGRES_PORT", "5432")
 
 images_dir = os.getenv("SHARED_IMAGES_DIR", "./app/images")
 
+
 async def main():
     logger.info("Starting consumer service")
 
@@ -62,7 +63,7 @@ async def main():
                     await db.update_feed_upload_job(
                         feed_upload_id, status=FeedUploadStatus.PROCESSING
                     )
-                    
+
                     # parse xml and save images
                     feed_items = await download_images_for_whole_feed(
                         feed_upload_id,
@@ -72,7 +73,6 @@ async def main():
 
                     # save feed items + update the associated upload job
                     await db.save_feed_items(feed_items)
-
                 except FeedParsingException as e:
                     await db.update_feed_upload_job(
                         feed_upload_id,
@@ -88,7 +88,9 @@ async def main():
                         error=f"Non xml-processing exception: {str(e)}",
                     )
                     cleanup_images_dir(images_dir, feed_upload_id)
-                    logger.warning(f"Non xml-processing exception has occured: {str(e)}")
+                    logger.warning(
+                        f"Non xml-processing exception has occured: {str(e)}"
+                    )
 
 
 if __name__ == "__main__":
