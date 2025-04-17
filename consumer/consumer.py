@@ -52,6 +52,7 @@ async def main():
                     raise ValueError(
                         "Expected an integer value as feed_upload_id from header"
                     )
+                logger.info(f"Started processing feed upload with id {feed_upload_id}")
 
                 await process_feeds(
                     feed_upload_id, message.body.decode(), images_dir, logger, db

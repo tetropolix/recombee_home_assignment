@@ -37,10 +37,12 @@ async def lifespan(app: FastAPI):
         host=rabbit_mq_host,
         exchange=rabbit_mq_exchange,
         queue=rabbit_mq_queue,
-        routing_key=rabbit_mq_rt_key
+        routing_key=rabbit_mq_rt_key,
     )
-    db = DBClient(dsn=f"postgresql://{pg_user}:{pg_password}@{db_host}:{pg_port}/{pg_db}")
-    
+    db = DBClient(
+        dsn=f"postgresql://{pg_user}:{pg_password}@{db_host}:{pg_port}/{pg_db}"
+    )
+
     await rabbitmq_client.connect_for_publishing()
     await db.connect()
 
@@ -55,11 +57,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+
 def rabbitmq_client() -> RabbitMQClient:
     return app.state.rabbitmq_client
 
+
 def db_client() -> DBClient:
     return app.state.db
+
 
 @app.post("/feeds", response_model=FeedUploadResponse)
 async def upload_feed(request: Request, content_type: Optional[str] = Header(None)):
@@ -94,6 +99,7 @@ async def upload_feed(request: Request, content_type: Optional[str] = Header(Non
 
     return FeedUploadResponse(id=feed_upload_id)
 
+
 @app.post("/feeds-v2", response_model=FeedUploadResponse)
 async def upload_feed_v2(request: Request, content_type: Optional[str] = Header(None)):
     if content_type != "application/xml":
@@ -111,7 +117,7 @@ async def upload_feed_v2(request: Request, content_type: Optional[str] = Header(
     feed_upload_id = await db_client().create_feed_upload_job()
 
     try:
-        process_feeds_v2.send(feed_upload_id, request_xml.decode()) 
+        process_feeds_v2.send(feed_upload_id, request_xml.decode())
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to create backround task: {str(e)}"
@@ -133,6 +139,7 @@ async def get_feed(feed_id: int):
         status=feed_upload_job.status,
         error=feed_upload_job.error,
         feed_processing_started_at=feed_upload_job.created_at,
+        feed_processing_successfully_finished_at=feed_upload_job.successfully_finished_at,
     )
 
 
@@ -145,7 +152,8 @@ async def get_feed_item_ids(feed_id: int):
 
 @app.get(
     "/feeds/{feed_id}/items/{item_id}",
-    response_model=FeedItem, response_model_exclude={"id"}
+    response_model=FeedItem,
+    response_model_exclude={"id"},
 )
 async def get_feed_item(feed_id: int, item_id: str):
     items = await db_client().get_feed_upload_items(feed_id, item_id)

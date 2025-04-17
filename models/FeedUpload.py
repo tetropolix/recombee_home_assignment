@@ -17,3 +17,4 @@ class FeedUpload(BaseModel):
     status: FeedUploadStatus
     error: Optional[str] = None
     created_at: Optional[datetime] = None
+    successfully_finished_at: Optional[datetime] = None

@@ -19,4 +19,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 WORKDIR /app
 
-CMD ["dramatiq", "consumer_v2.consumer_v2"]
+CMD ["dramatiq", "consumer_v2.consumer_v2", "-p", "4", "-t", "4"]

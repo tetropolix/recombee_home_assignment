@@ -8,6 +8,7 @@ class FeedUploadStatusResponse(FeedUploadResponse):
     status: FeedUploadStatus
     error: Optional[str]
     feed_processing_started_at: Optional[datetime]
+    feed_processing_successfully_finished_at: Optional[datetime]
 
     class Config:
         use_enum_values = False

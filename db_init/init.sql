@@ -2,7 +2,8 @@ CREATE TABLE IF NOT EXISTS feed_uploads (
     id SERIAL PRIMARY KEY,
     status INTEGER NOT NULL CHECK (status IN (1, 2, 3, 4)),
     error TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    successfully_finished_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS feed_items(

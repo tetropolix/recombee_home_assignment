@@ -1,3 +1,4 @@
+from datetime import datetime
 import asyncpg
 from typing import Optional
 
@@ -17,8 +18,11 @@ class DBClient:
         self.pool: Optional[asyncpg.Pool] = None
 
     async def connect(self):
+        if self.pool is not None and not self.pool._closed:
+            logger.info("Reusing existing connection pool")
+            return self.pool
         logger.info(f"Creating connection pool using {self.dsn} dsn")
-        self.pool = await asyncpg.create_pool(dsn=self.dsn)
+        self.pool = await asyncpg.create_pool(dsn=self.dsn, min_size=5, max_size=8)
         logger.info("Connection pool created")
 
     async def close(self):
@@ -58,13 +62,13 @@ class DBClient:
             FeedItemWithUploadReference.model_construct(**dict(row)) for row in rows
         ]
 
-    async def save_feed_items(self, feed_items: list[FeedItemWithUploadReference]):
+    async def save_feed_items(self, feed_items: list[FeedItemWithUploadReference], upload_feed_finished_at: Optional[datetime] = None):
         if not feed_items:
             return
 
         update_sql = f"""
                     UPDATE {self.FEED_UPLOADS_TABLE}
-                    SET status = $1, error = $2
+                    SET status = $1, error = $2, successfully_finished_at = $4
                     WHERE id = $3
                 """
 
@@ -90,6 +94,7 @@ class DBClient:
                     FeedUploadStatus.FINISHED,
                     None,
                     feed_items[0].feed_upload_id,
+                    upload_feed_finished_at or datetime.now()
                 )
 
     async def create_feed_upload_job(self) -> int:
@@ -105,7 +110,7 @@ class DBClient:
 
     async def get_feed_upload_job(self, feed_upload_id: int) -> FeedUpload | None:
         sql = f"""
-            SELECT id, status, error, created_at
+            SELECT id, status, error, created_at, successfully_finished_at
             FROM {self.FEED_UPLOADS_TABLE}
             WHERE id = $1
         """
